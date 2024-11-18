@@ -1,6 +1,6 @@
 library(tidyverse)
 library(lme4)
-library(lmerTest)
+# library(lmerTest)
 
 data <- data.frame(datasets::Orange)
 data
@@ -16,8 +16,8 @@ glimpse(data)
 
 # Fitting fixed effects model
 fmod <- lm(circumference ~ age, data = data)
-fmod <- lm(circumference ~ age + Tree, data = data)
-fmod <- lm(circumference ~ age*Tree, data = data)
+# fmod <- lm(circumference ~ age + Tree, data = data)
+# fmod <- lm(circumference ~ age*Tree, data = data)
 
 # Checking the spread of residuals vs. fitted values
 plot(fmod, 1)
@@ -109,3 +109,60 @@ anova(mmod_random_intercept)
 faraway::sumary(mmod_random_intercept)
 
 summary(mmod_random_int_slope) # Mixed effects model with random intercepts and random slopes
+
+lmerTest::ranova(mmod_random_int_slope)
+anova(mmod_random_int_slope)
+
+# Manually calculating SE(age) in the fixed effects model
+ssr <- sum(fmod$residuals**2)
+predictor_variance <- var(data$age)
+
+res_se <- sqrt(ssr / (35-2))
+se_age <- res_se / sqrt((35-1) * predictor_variance)
+se_age
+
+# Manually calculating the standard errors for fixed effect estimates for the mixed effects model
+
+# Fixed effects design matrix
+X <- getME(mmod_random_int_slope, name = "X")
+head(X)
+dim(X)
+
+# Random effects design matrix
+Z <- getME(mmod_random_int_slope, name = "Z") # Outputs a sparse matrix
+Z <- as.matrix(Z) # Convert to a dense matrix
+head(Z, 14)
+dim(Z)
+
+# Covariance matrix of random effects
+G <- VarCorr(mmod_random_int_slope) # Pull from fitted model
+G <- as.matrix(G$Tree) # Convert to matrix object
+
+# Scale G by the number of Tree levels (5) so that we can matrix multiply it with Z
+num_groups <- ncol(Z) / ncol(G)  # Number of Tree levels (should be 5)
+G <- bdiag(replicate(num_groups, G, simplify = FALSE))  # Block-diagonal
+
+round(G, 4) # Rounded G because it was too wide for displaying
+dim(G)
+
+G <- as.matrix(G) # Convert to dense matrix
+
+# Calculate the residual variance
+sigma_sq <- sigma(mmod_random_int_slope)**2 # Get the residual SD, then square it to get the variance estimate
+n <- nrow(data)
+R <- diag(sigma_sq, n, n)
+round(R, 3)
+
+dim(Z)
+dim(G)
+
+# Calculate the variance-covariance matrix of the response
+V <- Z %*% G %*% t(Z) + R
+V[1:8,1:8]
+
+# Compute the Variance-Covariance Matrix of Fixed Effects (Var(beta_hat))
+V_inv <- solve(V)
+Xt_Vinv_X <- t(X) %*% V_inv %*% X
+Var_beta_hat <- solve(Xt_Vinv_X)
+Var_beta_hat # Variances on the diagonal
+sqrt(diag(Var_beta_hat)) # Square root for SEs
